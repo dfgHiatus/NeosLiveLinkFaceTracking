@@ -9,7 +9,7 @@ namespace NeosLiveLinkIntegration
 {
 	public class NeosLiveLink : NeosMod
 	{
-		public override string Name => "Neos-WCFace-Integration";
+		public override string Name => "NeosLiveLink";
 		public override string Author => "dfgHiatus";
 		public override string Version => "1.0.0";
 		public override string Link => "https://github.com/dfgHiatus/Neos-Eye-Face-API/";
@@ -105,6 +105,8 @@ namespace NeosLiveLinkIntegration
 
 		public void UpdateEyes()
         {
+			eyes.IsEyeTrackingActive = !Engine.Current.InputInterface.VR_Active;
+
 			eyes.LeftEye.IsDeviceActive = !Engine.Current.InputInterface.VR_Active;
 			eyes.RightEye.IsDeviceActive = !Engine.Current.InputInterface.VR_Active;
 			eyes.CombinedEye.IsDeviceActive = !Engine.Current.InputInterface.VR_Active;
@@ -115,14 +117,13 @@ namespace NeosLiveLinkIntegration
 
 			eyes.LeftEye.Direction = new float3(TrackingData.liveLinkTrackingDataStruct.left_eye.EyePitch,
 												TrackingData.liveLinkTrackingDataStruct.left_eye.EyeYaw * -1f,
-												TrackingData.liveLinkTrackingDataStruct.left_eye.EyeRoll);
+												TrackingData.liveLinkTrackingDataStruct.left_eye.EyeRoll).Normalized;
 			eyes.RightEye.Direction = new float3(TrackingData.liveLinkTrackingDataStruct.right_eye.EyePitch,
 												TrackingData.liveLinkTrackingDataStruct.right_eye.EyeYaw * -1f,
-												TrackingData.liveLinkTrackingDataStruct.right_eye.EyeRoll);
-
-			eyes.LeftEye.Direction = new float3(TrackingData.liveLinkTrackingDataStruct.getCombined().EyePitch,
+												TrackingData.liveLinkTrackingDataStruct.right_eye.EyeRoll).Normalized;
+			eyes.CombinedEye.Direction = new float3(TrackingData.liveLinkTrackingDataStruct.getCombined().EyePitch,
 												TrackingData.liveLinkTrackingDataStruct.getCombined().EyeYaw * -1f,
-												TrackingData.liveLinkTrackingDataStruct.getCombined().EyeRoll);
+												TrackingData.liveLinkTrackingDataStruct.getCombined().EyeRoll).Normalized;
 
 			// Is In/Out left or right?
 /*			eyes.LeftEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookIn - TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookOut,
