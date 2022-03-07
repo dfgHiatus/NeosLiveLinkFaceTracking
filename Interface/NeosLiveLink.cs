@@ -12,12 +12,14 @@ namespace NeosLiveLinkIntegration
 		public override string Name => "NeosLiveLink";
 		public override string Author => "dfgHiatus";
 		public override string Version => "1.0.0";
-		public override string Link => "https://github.com/dfgHiatus/Neos-Eye-Face-API/";
+		public override string Link => "https://github.com/dfgHiatus/NeosLiveLinkFaceTracking";
 		public override void OnEngineInit()
 		{
 			Harmony harmony = new Harmony("net.dfgHiatus.Neos-Eye-Face-API");
 			harmony.PatchAll();
 		}
+
+		public static LiveLinkTrackingModule liveLinkTrackingModule;
 
 		[HarmonyPatch(typeof(InputInterface), MethodType.Constructor)]
 		[HarmonyPatch(new[] { typeof(Engine)})]
@@ -25,11 +27,23 @@ namespace NeosLiveLinkIntegration
 		{
 			public static void Postfix(InputInterface __instance)
 			{
+				liveLinkTrackingModule = new LiveLinkTrackingModule();
+				if (liveLinkTrackingModule.Initialize().None())
+				{
+					UniLog.Log("LiveLinkTracking was not initialized.");
+					return;
+				}
+				liveLinkTrackingModule.GetUpdateThreadFunc();
+
 				try
 				{
-					GenericInputDevice gen = new GenericInputDevice();
-					Debug("Module Name: " + gen.ToString());
-					__instance.RegisterInputDriver(gen);
+					EyeInputDevice eyeGen = new EyeInputDevice();
+					Debug("Module Name: " + eyeGen.ToString());
+					__instance.RegisterInputDriver(eyeGen);
+
+					MouthInputDevice mouthGen = new MouthInputDevice();
+					Debug("Module Name: " + mouthGen.ToString());
+					__instance.RegisterInputDriver(mouthGen);
 				}
 				catch (Exception e)
 				{
@@ -38,16 +52,6 @@ namespace NeosLiveLinkIntegration
 				}
 			}
 		}
-	}
-
-	public class GenericInputDevice : IInputDriver
-	{
-		public Eyes eyes;
-		public Mouth mouth;
-		private float Alpha = 2f;
-		private float Beta = 2f;
-		public int UpdateOrder => 100;
-		public static LiveLinkTrackingModule liveLinkTrackingModule;
 
 		[HarmonyPatch(typeof(Engine), "Shutdown")]
 		public class ShutdownPatch
@@ -60,6 +64,14 @@ namespace NeosLiveLinkIntegration
 				return true;
 			}
 		}
+	}
+
+	public class EyeInputDevice : IInputDriver
+	{
+		public Eyes eyes;
+		private float Alpha = 2f;
+		private float Beta = 2f;
+		public int UpdateOrder => 100;
 
 		public void CollectDeviceInfos(BaseX.DataTreeList list)
         {
@@ -78,16 +90,7 @@ namespace NeosLiveLinkIntegration
 
 		public void RegisterInputs(InputInterface inputInterface)
 		{
-			liveLinkTrackingModule = new LiveLinkTrackingModule();
-			if (liveLinkTrackingModule.Initialize().None())
-			{
-				UniLog.Log("LiveLinkTracking was not initialized.");
-				return;
-			}
-			liveLinkTrackingModule.GetUpdateThreadFunc();
-
-			eyes = new Eyes(inputInterface, "Generic Eye Tracking");
-			mouth = new Mouth(inputInterface, "Generic Mouth Tracking");
+			eyes = new Eyes(inputInterface, "LiveLink Eye Tracking");
 		}
 
 		private float3 convertTo3DGaze(float eyeX, float eyeY)
@@ -99,12 +102,6 @@ namespace NeosLiveLinkIntegration
 
 		public void UpdateInputs(float deltaTime)
         {
-			UpdateEyes();
-			UpdateMouth();
-		}
-
-		public void UpdateEyes()
-        {
 			eyes.IsEyeTrackingActive = !Engine.Current.InputInterface.VR_Active;
 
 			eyes.LeftEye.IsDeviceActive = !Engine.Current.InputInterface.VR_Active;
@@ -114,6 +111,16 @@ namespace NeosLiveLinkIntegration
 			eyes.LeftEye.IsTracking = !Engine.Current.InputInterface.VR_Active;
 			eyes.RightEye.IsTracking = !Engine.Current.InputInterface.VR_Active;
 			eyes.CombinedEye.IsTracking = !Engine.Current.InputInterface.VR_Active;
+
+			eyes.LeftEye.RawPosition = new float3(TrackingData.liveLinkTrackingDataStruct.left_eye.EyeYaw * -1f,
+												   TrackingData.liveLinkTrackingDataStruct.left_eye.EyePitch,
+												   0f).Normalized;
+			eyes.RightEye.RawPosition = new float3(TrackingData.liveLinkTrackingDataStruct.right_eye.EyeYaw * -1f,
+												   TrackingData.liveLinkTrackingDataStruct.right_eye.EyePitch,
+												   0f).Normalized;
+			eyes.CombinedEye.RawPosition = new float3(TrackingData.liveLinkTrackingDataStruct.getCombined().EyeYaw * -1f,
+													  TrackingData.liveLinkTrackingDataStruct.getCombined().EyePitch,
+													  0f).Normalized;
 
 			eyes.LeftEye.Direction = new float3(TrackingData.liveLinkTrackingDataStruct.left_eye.EyePitch,
 												TrackingData.liveLinkTrackingDataStruct.left_eye.EyeYaw * -1f,
@@ -126,12 +133,12 @@ namespace NeosLiveLinkIntegration
 												TrackingData.liveLinkTrackingDataStruct.getCombined().EyeRoll).Normalized;
 
 			// Is In/Out left or right?
-/*			eyes.LeftEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookIn - TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookOut,
-													 TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookUp - TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookDown);
-			eyes.RightEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookIn - TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookOut,
-													  TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookUp - TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookDown);
-			eyes.CombinedEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookIn - TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookOut,
-														 TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookUp - TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookDown);*/
+			/*			eyes.LeftEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookIn - TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookOut,
+																 TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookUp - TrackingData.liveLinkTrackingDataStruct.left_eye.EyeLookDown);
+						eyes.RightEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookIn - TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookOut,
+																  TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookUp - TrackingData.liveLinkTrackingDataStruct.right_eye.EyeLookDown);
+						eyes.CombinedEye.Direction = convertTo3DGaze(TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookIn - TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookOut,
+																	 TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookUp - TrackingData.liveLinkTrackingDataStruct.getCombined().EyeLookDown);*/
 
 			eyes.LeftEye.Squeeze = TrackingData.liveLinkTrackingDataStruct.left_eye.EyeSquint;
 			eyes.RightEye.Squeeze = TrackingData.liveLinkTrackingDataStruct.right_eye.EyeSquint;
@@ -145,14 +152,34 @@ namespace NeosLiveLinkIntegration
 			eyes.RightEye.Openness = TrackingData.eyeCalc(TrackingData.liveLinkTrackingDataStruct.right_eye.EyeWide, TrackingData.liveLinkTrackingDataStruct.right_eye.EyeSquint);
 			eyes.CombinedEye.Openness = TrackingData.eyeCalc(TrackingData.liveLinkTrackingDataStruct.getCombined().EyeWide, TrackingData.liveLinkTrackingDataStruct.getCombined().EyeSquint);
 		}
+	}
 
-		public void UpdateMouth()
-        {
+	public class MouthInputDevice : IInputDriver
+	{
+		public Mouth mouth;
+		public int UpdateOrder => 100;
+
+		public void CollectDeviceInfos(BaseX.DataTreeList list)
+		{
+			DataTreeDictionary MouthDataTreeDictionary = new DataTreeDictionary();
+			MouthDataTreeDictionary.Add("Name", "LiveLink Face Tracking");
+			MouthDataTreeDictionary.Add("Type", "Face Tracking");
+			MouthDataTreeDictionary.Add("Model", "iOS");
+			list.Add(MouthDataTreeDictionary);
+		}
+
+		public void RegisterInputs(InputInterface inputInterface)
+		{
+			mouth = new Mouth(inputInterface, "LiveLink Mouth Tracking");
+		}
+
+		public void UpdateInputs(float deltaTime)
+		{
 			mouth.IsDeviceActive = !Engine.Current.InputInterface.VR_Active;
 			mouth.IsTracking = !Engine.Current.InputInterface.VR_Active;
 
 			mouth.Jaw = new float3(TrackingData.liveLinkTrackingDataStruct.lips.JawRight
-				- TrackingData.liveLinkTrackingDataStruct.lips.JawLeft, 
+				- TrackingData.liveLinkTrackingDataStruct.lips.JawLeft,
 				0,
 				TrackingData.liveLinkTrackingDataStruct.lips.JawForward);
 
@@ -162,7 +189,7 @@ namespace NeosLiveLinkIntegration
 				TrackingData.liveLinkTrackingDataStruct.lips.TongueOut);
 
 			mouth.JawOpen = TrackingData.liveLinkTrackingDataStruct.lips.JawOpen;
-			mouth.MouthPout = (TrackingData.liveLinkTrackingDataStruct.lips.MouthFunnel + 
+			mouth.MouthPout = (TrackingData.liveLinkTrackingDataStruct.lips.MouthFunnel +
 							   TrackingData.liveLinkTrackingDataStruct.lips.MouthPucker) / 2;
 
 			mouth.LipBottomOverturn = TrackingData.liveLinkTrackingDataStruct.lips.MouthShrugLower;
@@ -173,10 +200,10 @@ namespace NeosLiveLinkIntegration
 			mouth.LipUpperRightRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthLeft;
 			mouth.LipUpperLeftRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthRight;
 
-/*			mouth.LipLowerLeftRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpLeft ;
-			mouth.LipLowerRightRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpRight ;
-			mouth.LipUpperRightRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpLeft ;
-			mouth.LipUpperLeftRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpRight ;*/
+			/*			mouth.LipLowerLeftRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpLeft ;
+						mouth.LipLowerRightRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpRight ;
+						mouth.LipUpperRightRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpLeft ;
+						mouth.LipUpperLeftRaise = TrackingData.liveLinkTrackingDataStruct.lips.MouthUpperUpRight ;*/
 
 			mouth.MouthRightSmileFrown = TrackingData.liveLinkTrackingDataStruct.lips.MouthSmileRight
 									   - TrackingData.liveLinkTrackingDataStruct.lips.MouthFrownRight;

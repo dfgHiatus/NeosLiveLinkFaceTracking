@@ -6,12 +6,12 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 
 // Huge thanks to Dazbme#0001 for this!
 
 namespace NeosLiveLinkIntegration.Interface
 {
-    // This class contains the overrides for any VRCFT Tracking Data struct functions
     public static class TrackingData
     {
         public static LiveLinkTrackingDataStruct liveLinkTrackingDataStruct;
@@ -38,12 +38,33 @@ namespace NeosLiveLinkIntegration.Interface
         // Starts listening and waits for the first packet to come in to initialize
         public bool2 Initialize()
         {
-            UniLog.Log("Initializing Live Link Tracking module");
-            _cancellationToken?.Cancel();
-            liveLinkConnection = new UdpClient(Constants.Port);
-            liveLinkRemoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
-            ReadData(liveLinkConnection, liveLinkRemoteEndpoint);
-            return new bool2(true, true);
+            UniLog.Log("Initializing Live Link Tracking module...");
+            // Thank you StackOverflow https://stackoverflow.com/a/10544579
+            // Try to connect for 10 seconds
+            bool Completed = ExecuteWithTimeLimit(TimeSpan.FromMilliseconds(10000), () =>
+            {
+                _cancellationToken?.Cancel();
+                liveLinkConnection = new UdpClient(Constants.Port);
+                liveLinkRemoteEndpoint = new IPEndPoint(IPAddress.Any, 0);
+                ReadData(liveLinkConnection, liveLinkRemoteEndpoint);
+            });
+
+            return Completed ? new bool2(true, true) : new bool2(false, false);
+        }
+
+        public static bool ExecuteWithTimeLimit(TimeSpan timeSpan, Action codeBlock)
+        {
+            try
+            {
+                // Task task = Task.Factory.StartNew(() => codeBlock());
+                Task task = new Task(codeBlock); // Suggested by Lost_In_Library, as not to wait x times
+                task.Wait(timeSpan);
+                return task.IsCompleted;
+            }
+            catch (AggregateException ae)
+            {
+                throw ae.InnerExceptions[0];
+            }
         }
 
         // Update the face pose every 10ms, this is the same frequency that Pimax and SRanipal use
@@ -79,7 +100,6 @@ namespace NeosLiveLinkIntegration.Interface
             liveLinkConnection.Close();
             UniLog.Log("LiveLink Teardown");
         }
-
         public bool SupportsEye => true;
         public bool SupportsLip => true;
 
